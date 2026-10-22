@@ -9,6 +9,7 @@ import 'package:pica_comic/foundation/app.dart';
 import 'package:pica_comic/foundation/pair.dart';
 import 'package:pica_comic/network/base_comic.dart';
 import 'package:pica_comic/network/res.dart';
+import 'package:pica_comic/network/picacg_network/search_filters.dart';
 import 'package:pica_comic/tools/extensions.dart';
 import 'package:pica_comic/tools/tags_translation.dart';
 import 'package:pica_comic/tools/translations.dart';
@@ -39,7 +40,16 @@ class _SearchPageComicList extends ComicsPage<BaseComic> {
   }
 
   @override
-  String? get tag => "$sourceKey search page with $keyword";
+  String? get tag => "$sourceKey search page with $keyword ${options.toString()}";
+
+  @override
+  bool get manualPageLoading => sourceKey == 'picacg' &&
+      PicacgSearchFilters.fromOptions(options).isActive;
+
+  @override
+  Widget buildEmptyView(BuildContext context) => manualPageLoading
+      ? Center(child: Text('本页无匹配结果'.tl))
+      : super.buildEmptyView(context);
 
   @override
   String? get title => null;
@@ -64,7 +74,8 @@ class SearchResultPage extends StatelessWidget {
     var comicSource =
         ComicSource.find(sourceKey) ?? (throw "source $sourceKey not found");
     var options = this.options;
-    if (comicSource.searchPageData?.searchOptions != null) {
+    if (comicSource.searchPageData?.customOptionsBuilder == null &&
+        comicSource.searchPageData?.searchOptions != null) {
       var searchOptions = comicSource.searchPageData!.searchOptions!;
       if (searchOptions.length != options.length) {
         options = searchOptions.map((e) => e.defaultValue).toList();
@@ -637,8 +648,8 @@ class _SearchOptionsState extends State<_SearchOptions> {
   @override
   void initState() {
     data = ComicSource.find(widget.sourceKey)!.searchPageData!;
-    options = widget.current;
-    if (data.searchOptions != null &&
+    options = List.of(widget.current);
+    if (data.customOptionsBuilder == null && data.searchOptions != null &&
         options.length != data.searchOptions!.length) {
       options = data.searchOptions!.map((e) => e.defaultValue).toList();
     }
@@ -649,7 +660,14 @@ class _SearchOptionsState extends State<_SearchOptions> {
   Widget build(BuildContext context) {
     return ContentDialog(
       title: "搜索选项".tl,
-      content: buildSearchOptions(context),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: (MediaQuery.of(context).size.height -
+                  MediaQuery.of(context).viewInsets.bottom) *
+              0.55,
+        ),
+        child: SingleChildScrollView(child: buildSearchOptions(context)),
+      ),
       actions: [
         Button.filled(
           child: Text("确认".tl),

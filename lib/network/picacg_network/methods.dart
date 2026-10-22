@@ -11,6 +11,7 @@ import '../../foundation/log.dart';
 import '../app_dio.dart';
 import '../res.dart';
 import 'models.dart';
+import 'search_filters.dart';
 
 export "models.dart";
 
@@ -277,9 +278,12 @@ class PicacgNetwork {
   ///搜索
   Future<Res<List<ComicItemBrief>>> search(
       String keyWord, String sort, int page,
-      {bool addToHistory = false}) async {
+      {bool addToHistory = false, PicacgSearchFilters? filters}) async {
+    if (filters?.hasConflict == true) {
+      return const Res([], subData: 1);
+    }
     var response = await post('$apiUrl/comics/advanced-search?page=$page',
-        {"keyword": keyWord, "sort": sort});
+        {"keyword": filters?.candidateKeyword(keyWord) ?? keyWord, "sort": sort});
     if (page == 1 && addToHistory && keyWord != "") {
       appdata.searchHistory.remove(keyWord);
       appdata.searchHistory.add(keyWord);
@@ -324,7 +328,11 @@ class PicacgNetwork {
           }
         });
       }
-      return Res(comics, subData: pages);
+      return Res(
+          filters?.isActive == true
+              ? comics.where((comic) => filters!.matches(comic.tags)).toList()
+              : comics,
+          subData: pages);
     } catch (e, s) {
       LogManager.addLog(LogLevel.error, "Data Analysis", "$e\n$s");
       return Res(null, errorMessage: e.toString());

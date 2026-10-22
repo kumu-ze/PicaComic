@@ -8,6 +8,8 @@ import 'package:pica_comic/foundation/history.dart';
 import 'package:pica_comic/foundation/image_loader/cached_image.dart';
 import 'package:pica_comic/foundation/local_favorites.dart';
 import 'package:pica_comic/network/picacg_network/methods.dart';
+import 'package:pica_comic/network/picacg_network/search_filters.dart';
+import 'package:pica_comic/pages/picacg/search_options.dart';
 import 'package:pica_comic/network/res.dart';
 import 'package:pica_comic/pages/comic_page.dart';
 import 'package:pica_comic/pages/picacg/collections_page.dart';
@@ -163,8 +165,12 @@ final picacg = ComicSource.named(
   ),
   searchPageData: SearchPageData.named(
     loadPage: (keyword, page, options) {
-      return PicacgNetwork().search(keyword, options[0], page, addToHistory: true);
+      final filters = PicacgSearchFilters.fromOptions(options);
+      return PicacgNetwork().search(keyword, filters.sort, page,
+          addToHistory: true, filters: filters);
     },
+    customOptionsBuilder: (context, initialValues, updater) =>
+        PicacgSearchOptions(initialValues: initialValues, onChanged: updater),
     searchOptions: [
       SearchOptions.named(
         label: "排序",

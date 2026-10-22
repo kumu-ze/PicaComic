@@ -596,9 +596,13 @@ class PreSearchPage extends StatelessWidget {
         var children = <Widget>[];
         if (logic.searchPageData.customOptionsBuilder != null) {
           children.add(
-            logic.searchPageData.customOptionsBuilder!(context, [], (options) {
-              logic.options = options;
-            }),
+            KeyedSubtree(
+              key: ValueKey(logic.target),
+              child: logic.searchPageData.customOptionsBuilder!(
+                  context, logic.options, (options) {
+                logic.options = options;
+              }),
+            ),
           );
         } else {
           final searchOptions =
