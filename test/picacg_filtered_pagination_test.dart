@@ -71,17 +71,38 @@ void main() {
   });
 
   for (final mode in ['0', '1']) {
-    testWidgets('empty pages remain navigable in list mode $mode', (tester) async {
+    testWidgets('empty pages remain navigable in list mode $mode', (
+      tester,
+    ) async {
       appdata.settings[25] = mode;
       appdata.settings[64] = '0';
       appdata.appSettings.fullyHideBlockedWorks = false;
       final requested = <int>[];
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: FixturePage((page) async {
-        requested.add(page);
-        return Res(page == 3
-            ? [const CustomComic('Fixture match', '', '', '1', [], '', 'picacg')]
-            : <BaseComic>[], subData: 3);
-      }))));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: FixturePage((page) async {
+              requested.add(page);
+              return Res(
+                page == 3
+                    ? [
+                        const CustomComic(
+                          'Fixture match',
+                          '',
+                          '',
+                          '1',
+                          [],
+                          '',
+                          'picacg',
+                        ),
+                      ]
+                    : <BaseComic>[],
+                subData: 3,
+              );
+            }),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(requested, [1]);
       final next = find.text(mode == '0' ? '继续筛选下一页' : '下一页');

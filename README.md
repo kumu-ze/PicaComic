@@ -9,6 +9,12 @@ A comic app with multiple sources built with flutter.
 
 **Forked from [nyne](https://github.com/wgh136), provide extended support & fix, no guaranteed roadmap.**
 
+## Picacg multi-tag search (this fork)
+
+The Picacg search page supports required tags (match all), excluded tags (match any), and optional keywords. Filtering uses exact tags/categories from the source response, with explicit pagination so empty filtered pages do not hide later matches.
+
+See [usage and matching details](doc/picacg-multi-tag-search.md). The fork includes regression tests for tag matching, search options and empty-page navigation.
+
 ## Download
 
 <a href="https://github.com/Pacalini/PicaComic/releases">

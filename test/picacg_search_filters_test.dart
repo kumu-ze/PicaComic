@@ -14,7 +14,9 @@ void main() {
 
   test('Chinese separators, newlines, whitespace and duplicates', () {
     expect(
-      PicacgSearchFilters.parseTags(' 冒险，彩色、冒险; Science Fiction\nscience fiction；校园\r\n ,'),
+      PicacgSearchFilters.parseTags(
+        ' 冒险，彩色、冒险; Science Fiction\nscience fiction；校园\r\n ,',
+      ),
       ['冒险', '彩色', 'Science Fiction', '校园'],
     );
   });
@@ -54,7 +56,8 @@ void main() {
 
   test('conflicts cannot match and are detected case-insensitively', () {
     final filters = PicacgSearchFilters(
-      includedText: 'Adventure', excludedText: 'adventure',
+      includedText: 'Adventure',
+      excludedText: 'adventure',
     );
     expect(filters.hasConflict, isTrue);
     expect(filters.matches(['Adventure']), isFalse);
@@ -62,7 +65,9 @@ void main() {
 
   test('options round-trip without losing multi-word tags or sorting', () {
     final original = PicacgSearchFilters(
-      sort: 'vd', includedText: 'Science Fiction, Full Color', excludedText: 'Draft',
+      sort: 'vd',
+      includedText: 'Science Fiction, Full Color',
+      excludedText: 'Draft',
     );
     final restored = PicacgSearchFilters.fromOptions(original.toOptions());
     expect(restored.toOptions(), original.toOptions());

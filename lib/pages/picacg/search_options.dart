@@ -132,8 +132,10 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
           Row(
             children: [
               Expanded(
-                child: Text('多标签搜索'.tl,
-                    style: Theme.of(context).textTheme.titleMedium),
+                child: Text(
+                  '多标签搜索'.tl,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
               ),
               TextButton(
                 onPressed: filters.isActive

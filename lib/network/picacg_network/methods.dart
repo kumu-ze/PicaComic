@@ -332,7 +332,7 @@ class PicacgNetwork {
           filters?.isActive == true
               ? comics.where((comic) => filters!.matches(comic.tags)).toList()
               : comics,
-          subData: pages);
+          subData: pages == 0 ? 1 : pages);
     } catch (e, s) {
       LogManager.addLog(LogLevel.error, "Data Analysis", "$e\n$s");
       return Res(null, errorMessage: e.toString());
