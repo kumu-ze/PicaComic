@@ -84,7 +84,7 @@ class PicacgNetwork {
   }
 
   Future<Res<Map<String, dynamic>>> post(
-      String url, Map<String, String>? data) async {
+      String url, Map<String, dynamic>? data) async {
     var api = "https://picaapi.picacomic.com";
     if (token == "" &&
         url != '$api/auth/sign-in' &&
@@ -279,11 +279,8 @@ class PicacgNetwork {
   Future<Res<List<ComicItemBrief>>> search(
       String keyWord, String sort, int page,
       {bool addToHistory = false, PicacgSearchFilters? filters}) async {
-    if (filters?.hasConflict == true) {
-      return const Res([], subData: 1);
-    }
     var response = await post('$apiUrl/comics/advanced-search?page=$page',
-        {"keyword": filters?.candidateKeyword(keyWord) ?? keyWord, "sort": sort});
+        filters?.toRequest(keyWord) ?? {"keyword": keyWord, "sort": sort});
     if (page == 1 && addToHistory && keyWord != "") {
       appdata.searchHistory.remove(keyWord);
       appdata.searchHistory.add(keyWord);
@@ -328,11 +325,7 @@ class PicacgNetwork {
           }
         });
       }
-      return Res(
-          filters?.isActive == true
-              ? comics.where((comic) => filters!.matches(comic.tags)).toList()
-              : comics,
-          subData: pages == 0 ? 1 : pages);
+      return Res(comics, subData: pages == 0 ? 1 : pages);
     } catch (e, s) {
       LogManager.addLog(LogLevel.error, "Data Analysis", "$e\n$s");
       return Res(null, errorMessage: e.toString());

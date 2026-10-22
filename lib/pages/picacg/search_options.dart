@@ -19,89 +19,30 @@ class PicacgSearchOptions extends StatefulWidget {
 
 class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
   late String sort;
-  late final TextEditingController included;
-  late final TextEditingController excluded;
+  late Set<String> categories;
 
-  PicacgSearchFilters get filters => PicacgSearchFilters(
-        sort: sort,
-        includedText: included.text,
-        excludedText: excluded.text,
-      );
+  void restore() {
+    final initial = PicacgSearchFilters.fromOptions(widget.initialValues);
+    sort = initial.sort;
+    categories = initial.categories.toSet();
+  }
 
   @override
   void initState() {
     super.initState();
-    final initial = PicacgSearchFilters.fromOptions(widget.initialValues);
-    sort = initial.sort;
-    included = TextEditingController(text: initial.includedText);
-    excluded = TextEditingController(text: initial.excludedText);
+    restore();
   }
 
   @override
   void didUpdateWidget(covariant PicacgSearchOptions oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!listEquals(widget.initialValues, oldWidget.initialValues)) {
-      final initial = PicacgSearchFilters.fromOptions(widget.initialValues);
-      sort = initial.sort;
-      if (included.text != initial.includedText) {
-        included.text = initial.includedText;
-      }
-      if (excluded.text != initial.excludedText) {
-        excluded.text = initial.excludedText;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    included.dispose();
-    excluded.dispose();
-    super.dispose();
+    if (!listEquals(widget.initialValues, oldWidget.initialValues)) restore();
   }
 
   void update() {
     setState(() {});
-    widget.onChanged(filters.toOptions());
-  }
-
-  Widget tagField(String label, TextEditingController controller) {
-    final tags = PicacgSearchFilters.parseTags(controller.text);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        TextField(
-          key: ValueKey(label),
-          controller: controller,
-          minLines: 1,
-          maxLines: 3,
-          keyboardType: TextInputType.multiline,
-          textInputAction: TextInputAction.newline,
-          decoration: InputDecoration(
-            labelText: label.tl,
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (_) => update(),
-        ),
-        if (tags.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                for (final tag in tags)
-                  InputChip(
-                    label: Text(tag),
-                    onDeleted: () {
-                      controller.text = tags.where((t) => t != tag).join(', ');
-                      update();
-                    },
-                  ),
-              ],
-            ),
-          ),
-      ],
-    );
+    widget.onChanged(
+        PicacgSearchFilters(sort: sort, categories: categories).toOptions());
   }
 
   @override
@@ -132,38 +73,41 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  '多标签搜索'.tl,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
+                  child: Text('分类（可多选）'.tl,
+                      style: Theme.of(context).textTheme.titleMedium)),
               TextButton(
-                onPressed: filters.isActive
-                    ? () {
-                        included.clear();
-                        excluded.clear();
+                onPressed: categories.isEmpty
+                    ? null
+                    : () {
+                        categories.clear();
                         update();
-                      }
-                    : null,
-                child: Text('清除标签'.tl),
+                      },
+                child: Text('清除分类'.tl),
               ),
             ],
           ),
-          Text('用逗号或换行分隔标签，标签内的空格会保留'.tl),
+          Text('选择分类后，与上方关键词一起搜索；未选择时搜索全部分类。'.tl),
           const SizedBox(height: 12),
-          tagField('包含所有标签', included),
-          const SizedBox(height: 12),
-          tagField('排除任一标签', excluded),
-          const SizedBox(height: 8),
-          Text('标签和分类精确匹配；可搭配上方关键词。筛选逐页进行，可继续加载后续页。'.tl),
-          if (filters.hasConflict)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '同一标签同时被包含和排除，不会有匹配结果'.tl,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final category in PicacgSearchFilters.availableCategories)
+                FilterChip(
+                  key: ValueKey('picacg-category-$category'),
+                  label: Text(category),
+                  selected: categories.contains(category),
+                  onSelected: (selected) {
+                    if (selected) {
+                      categories.add(category);
+                    } else {
+                      categories.remove(category);
+                    }
+                    update();
+                  },
+                ),
+            ],
+          ),
         ],
       ),
     );

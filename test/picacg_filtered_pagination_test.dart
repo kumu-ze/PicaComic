@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pica_comic/base.dart';
+import 'package:pica_comic/foundation/state_controller.dart';
 import 'package:pica_comic/components/components.dart';
 import 'package:pica_comic/network/base_comic.dart';
 import 'package:pica_comic/network/res.dart';
@@ -14,14 +16,15 @@ class FixturePage extends ComicsPage<BaseComic> {
   @override
   String get sourceKey => 'picacg';
   @override
-  String get tag => 'filtered-pagination-test';
-  @override
-  bool get manualPageLoading => true;
+  String get tag => 'native-pagination-test';
   @override
   Future<Res<List<BaseComic>>> getComics(int page) => loader(page);
   @override
   Widget buildItem(BuildContext context, BaseComic item) => Text(item.title);
 }
+
+List<BaseComic> comics(int page) => List.generate(20,
+    (i) => CustomComic('Book $page-$i', '', '', '$page-$i', [], '', 'picacg'));
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -29,92 +32,93 @@ void main() {
     appdata.settings[50] = 'cn';
     await AppTranslation.init();
   });
+  setUp(() {
+    appdata.settings[25] = '0';
+    appdata.settings[44] = '0,1.0';
+    appdata.settings[64] = '0';
+    appdata.appSettings.fullyHideBlockedWorks = false;
+  });
+  Future<void> mount(WidgetTester tester,
+      Future<Res<List<BaseComic>>> Function(int) loader) async {
+    await tester
+        .pumpWidget(MaterialApp(home: Scaffold(body: FixturePage(loader))));
+    await tester.pumpAndSettle();
+    // The test host is Windows: switch its smooth scroller to touch input.
+    await tester.tap(find.byType(CustomScrollView));
+    await tester.pump();
+  }
 
-  test('an empty first page retains the source page count', () async {
-    final logic = ComicsPageLogic<String>(preserveEmptyPages: true);
-    await logic.get((_) async => const Res([], subData: 3));
-    expect(logic.maxPage, 3);
-    await logic.loadNextPage((_) async => const Res([], subData: 3));
-    await logic.loadNextPage((_) async => const Res(['match'], subData: 3));
-    expect(logic.comics, ['match']);
-    expect(logic.current, 3);
-    expect(logic.dividedComics![1], isEmpty);
-    expect(logic.dividedComics![2], isEmpty);
+  testWidgets('scrolling to the end automatically appends the next native page',
+      (tester) async {
+    final requested = <int>[];
+    await mount(tester, (page) async {
+      requested.add(page);
+      return Res(comics(page), subData: 2);
+    });
+    expect(requested, [1]);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(requested, [1, 2]);
+    final logic = StateController.find<ComicsPageLogic<BaseComic>>(
+        tag: 'native-pagination-test');
+    expect(logic.comics!.length, 40);
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -5000));
+    await tester.pumpAndSettle();
+    expect(requested, [1, 2]);
+    expect(find.text('继续筛选下一页'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('failed auto loading pauses and retry requests the same page',
+      (tester) async {
+    final requested = <int>[];
+    var fail = true;
+    await mount(tester, (page) async {
+      requested.add(page);
+      if (page == 2 && fail) return const Res.error('offline');
+      return Res(comics(page), subData: 2);
+    });
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    expect(requested, [1, 2]);
+    fail = false;
+    await tester.ensureVisible(find.text('重试'));
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+    expect(requested, [1, 2, 2]);
+    expect(
+        StateController.find<ComicsPageLogic<BaseComic>>(
+                tag: 'native-pagination-test')
+            .comics!
+            .length,
+        40);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('only one next-page request can be in flight and refresh resets paging',
+      () async {
+    final logic = ComicsPageLogic<String>();
+    await logic.get((_) async => const Res(['first'], subData: 3));
+    final response = Completer<Res<List<String>>>();
+    var calls = 0;
+    Future<Res<List<String>>> loader(int page) {
+      calls++;
+      return response.future;
+    }
+
+    final loading = logic.loadNextPage(loader);
+    await logic.loadNextPage(loader);
+    expect(calls, 1);
+    response.complete(const Res(['second'], subData: 3));
+    await loading;
+    expect(logic.current, 2);
+    expect(logic.comics, ['first', 'second']);
     logic.refresh();
     expect(logic.current, 1);
+    expect(logic.comics, isNull);
     expect(logic.maxPage, isNull);
     expect(logic.dividedComics, isNull);
   });
-
-  test('ordinary empty search keeps the legacy stop behavior', () async {
-    final logic = ComicsPageLogic<String>();
-    await logic.get((_) async => const Res([], subData: 4));
-    expect(logic.maxPage, 1);
-  });
-
-  testWidgets('a failed page is retried without skipping it', (tester) async {
-    final requested = <int>[];
-    final logic = ComicsPageLogic<String>(preserveEmptyPages: true);
-    await logic.get((_) async => const Res([], subData: 3));
-    await logic.loadNextPage((page) async {
-      requested.add(page);
-      return const Res.error('offline');
-    });
-    expect(logic.current, 1);
-    await logic.loadNextPage((page) async {
-      requested.add(page);
-      return const Res(['match'], subData: 3);
-    });
-    expect(requested, [2, 2]);
-    expect(logic.current, 2);
-    await tester.pump(const Duration(seconds: 3));
-  });
-
-  for (final mode in ['0', '1']) {
-    testWidgets('empty pages remain navigable in list mode $mode', (
-      tester,
-    ) async {
-      appdata.settings[25] = mode;
-      appdata.settings[64] = '0';
-      appdata.appSettings.fullyHideBlockedWorks = false;
-      final requested = <int>[];
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: FixturePage((page) async {
-              requested.add(page);
-              return Res(
-                page == 3
-                    ? [
-                        const CustomComic(
-                          'Fixture match',
-                          '',
-                          '',
-                          '1',
-                          [],
-                          '',
-                          'picacg',
-                        ),
-                      ]
-                    : <BaseComic>[],
-                subData: 3,
-              );
-            }),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(requested, [1]);
-      final next = find.text(mode == '0' ? '继续筛选下一页' : '下一页');
-      await tester.tap(next);
-      await tester.pumpAndSettle();
-      expect(requested, [1, 2]);
-      await tester.tap(next);
-      await tester.pumpAndSettle();
-      expect(requested, [1, 2, 3]);
-      expect(find.text('Fixture match'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-    });
-  }
 }

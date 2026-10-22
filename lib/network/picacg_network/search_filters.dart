@@ -1,5 +1,5 @@
-/// Picacg filters are stored alongside the existing sort option.
-/// Matching uses the tags/categories returned by Picacg, never title substrings.
+/// Options for Picacg's native keyword/category search.
+/// Categories are sent to the server; returned results are not filtered locally.
 class PicacgSearchFilters {
   static const sortLabels = {
     'dd': '新到旧',
@@ -8,55 +8,72 @@ class PicacgSearchFilters {
     'vd': '最多指名',
   };
 
-  final String sort;
-  final String includedText;
-  final String excludedText;
-  final List<String> included;
-  final List<String> excluded;
+  static const _optionsVersion = 'native-categories-v1';
 
-  PicacgSearchFilters({
-    String sort = 'dd',
-    this.includedText = '',
-    this.excludedText = '',
-  })  : sort = sortLabels.containsKey(sort) ? sort : 'dd',
-        included = parseTags(includedText),
-        excluded = parseTags(excludedText);
+  // Use the exact server category names already used by the category browser.
+  static const availableCategories = <String>[
+    "嗶咔漢化",
+    "全彩",
+    "長篇",
+    "同人",
+    "短篇",
+    "圓神領域",
+    "碧藍幻想",
+    "CG雜圖",
+    "英語 ENG",
+    "生肉",
+    "純愛",
+    "百合花園",
+    "耽美花園",
+    "偽娘哲學",
+    "後宮閃光",
+    "扶他樂園",
+    "單行本",
+    "姐姐系",
+    "妹妹系",
+    "SM",
+    "性轉換",
+    "足の恋",
+    "人妻",
+    "NTR",
+    "強暴",
+    "非人類",
+    "艦隊收藏",
+    "Love Live",
+    "SAO 刀劍神域",
+    "Fate",
+    "東方",
+    "WEBTOON",
+    "禁書目錄",
+    "歐美",
+    "Cosplay",
+    "重口地帶",
+  ];
+
+  final String sort;
+  final List<String> categories;
+
+  PicacgSearchFilters(
+      {String sort = 'dd', Iterable<String> categories = const []})
+      : sort = sortLabels.containsKey(sort) ? sort : 'dd',
+        categories = List.unmodifiable(
+            categories.where(availableCategories.contains).toSet());
 
   factory PicacgSearchFilters.fromOptions(List<String> options) {
     return PicacgSearchFilters(
-      sort: options.isNotEmpty ? options[0] : 'dd',
-      includedText: options.length > 1 ? options[1] : '',
-      excludedText: options.length > 2 ? options[2] : '',
+      sort: options.isEmpty ? 'dd' : options.first,
+      // Never reinterpret legacy include/exclude tags as native categories.
+      categories: options.length > 1 && options[1] == _optionsVersion
+          ? options.skip(2)
+          : const [],
     );
   }
 
-  static List<String> parseTags(String text) {
-    final seen = <String>{};
-    return text
-        .split(RegExp(r'[,，、;；\r\n]+'))
-        .map((tag) => tag.trim())
-        .where((tag) => tag.isNotEmpty && seen.add(tag.toLowerCase()))
-        .toList(growable: false);
-  }
+  Map<String, dynamic> toRequest(String keyword) => {
+        'keyword': keyword,
+        'sort': sort,
+        if (categories.isNotEmpty) 'categories': categories,
+      };
 
-  bool get isActive => included.isNotEmpty || excluded.isNotEmpty;
-
-  bool get hasConflict {
-    final excludedKeys = excluded.map((tag) => tag.toLowerCase()).toSet();
-    return included.any((tag) => excludedKeys.contains(tag.toLowerCase()));
-  }
-
-  /// A single included tag narrows the candidate search when no keyword is set.
-  /// Every included/excluded tag is still checked against returned metadata.
-  String candidateKeyword(String keyword) => keyword.trim().isNotEmpty
-      ? keyword
-      : (included.isNotEmpty ? included.first : '');
-
-  bool matches(Iterable<String> tags) {
-    final keys = tags.map((tag) => tag.trim().toLowerCase()).toSet();
-    return included.every((tag) => keys.contains(tag.toLowerCase())) &&
-        !excluded.any((tag) => keys.contains(tag.toLowerCase()));
-  }
-
-  List<String> toOptions() => [sort, includedText, excludedText];
+  List<String> toOptions() => [sort, _optionsVersion, ...categories];
 }

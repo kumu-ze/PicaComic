@@ -9,7 +9,6 @@ import 'package:pica_comic/foundation/app.dart';
 import 'package:pica_comic/foundation/pair.dart';
 import 'package:pica_comic/network/base_comic.dart';
 import 'package:pica_comic/network/res.dart';
-import 'package:pica_comic/network/picacg_network/search_filters.dart';
 import 'package:pica_comic/tools/extensions.dart';
 import 'package:pica_comic/tools/tags_translation.dart';
 import 'package:pica_comic/tools/translations.dart';
@@ -41,15 +40,6 @@ class _SearchPageComicList extends ComicsPage<BaseComic> {
 
   @override
   String? get tag => "$sourceKey search page with $keyword ${options.toString()}";
-
-  @override
-  bool get manualPageLoading => sourceKey == 'picacg' &&
-      PicacgSearchFilters.fromOptions(options).isActive;
-
-  @override
-  Widget buildEmptyView(BuildContext context) => manualPageLoading
-      ? Center(child: Text('本页无匹配结果'.tl))
-      : super.buildEmptyView(context);
 
   @override
   String? get title => null;

@@ -1,10 +1,6 @@
 part of 'components.dart';
 
 class ComicsPageLogic<T> extends StateController {
-  ComicsPageLogic({this.preserveEmptyPages = false});
-
-  final bool preserveEmptyPages;
-
   bool loading = true;
 
   ///用于正常模式下的漫画数据储存
@@ -42,7 +38,7 @@ class ComicsPageLogic<T> extends StateController {
         if (res.subData is int) {
           maxPage = res.subData;
         }
-        if (res.data.isEmpty && !preserveEmptyPages) {
+        if (res.data.isEmpty) {
           maxPage = 1;
         }
       }
@@ -64,14 +60,18 @@ class ComicsPageLogic<T> extends StateController {
 
   int _emptyPageCount = 0;
 
+  String? nextPageError;
+
   Future<void> loadNextPage(Future<Res<List<T>>> Function(int) getComics) async {
     if (maxPage != null && current >= maxPage!) return;
     if (loadingData) return;
     loadingData = true;
     Future.microtask(() => update());
+    nextPageError = null;
     var res = await getComics(current + 1);
     if (res.error) {
-      showToast(message: res.errorMessage!);
+      nextPageError = res.errorMessage ?? 'Network Error';
+      showToast(message: nextPageError!);
     } else {
       current++;
       dividedComics![current] = res.data;
@@ -87,9 +87,7 @@ class ComicsPageLogic<T> extends StateController {
           maxPage = current;
         }
         // 等待一会儿再加载, 避免因为某些错误导致无限加载
-        if (!preserveEmptyPages) {
-          await Future.delayed(const Duration(seconds: 1));
-        }
+        await Future.delayed(const Duration(seconds: 1));
       } else {
         _emptyPageCount = 0;
         comics!.addAll(res.data);
@@ -107,6 +105,7 @@ class ComicsPageLogic<T> extends StateController {
     current = 1;
     maxPage = null;
     _emptyPageCount = 0;
+    nextPageError = null;
     message = null;
     update();
   }
@@ -143,10 +142,6 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
 
   bool get showPageIndicator => true;
 
-  /// Filtered pages can be empty while the source still has more results.
-  /// Use explicit loading to avoid unbounded background scans.
-  bool get manualPageLoading => false;
-
   List<ComicTileMenuOption>? get addonMenuOptions => null;
 
   /// 刷新页面
@@ -178,7 +173,7 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
     }
 
     Widget body = StateBuilder<ComicsPageLogic<T>>(
-        init: ComicsPageLogic<T>(preserveEmptyPages: manualPageLoading),
+        init: ComicsPageLogic<T>(),
         tag: tag,
         builder: (logic) {
           if (logic.dividedComics?[logic.current] == null &&
@@ -234,13 +229,7 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
                     if (header != null) header!,
                     SliverFillRemaining(
                       hasScrollBody: false,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          buildEmptyView(context),
-                          if (manualPageLoading) buildLoadMore(context, logic),
-                        ],
-                      ),
+                      child: buildEmptyView(context),
                     ),
                   ],
                 );
@@ -256,17 +245,24 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
                   SliverGrid(
                     delegate: SliverChildBuilderDelegate(
                         childCount: comics.length, (context, i) {
-                      if (!manualPageLoading && i == comics.length - 1) {
+                      if (i == comics.length - 1 && logic.nextPageError == null) {
                         logic.loadNextPage(getComics);
                       }
                       return buildItem(context, comics[i]);
                     }),
                     gridDelegate: SliverGridDelegateWithComics(),
                   ),
-                  if (manualPageLoading)
-                    SliverToBoxAdapter(child: buildLoadMore(context, logic)),
-                  if (!manualPageLoading &&
-                      logic.current < (logic.maxPage ?? 114514) &&
+                  if (logic.nextPageError != null)
+                    SliverToBoxAdapter(
+                      child: Center(
+                        child: TextButton.icon(
+                          onPressed: () => logic.loadNextPage(getComics),
+                          icon: const Icon(Icons.refresh),
+                          label: Text('重试'.tl),
+                        ),
+                      ),
+                    ),
+                  if (logic.current < (logic.maxPage ?? 114514) &&
                       logic.loadingData)
                     const SliverToBoxAdapter(
                       child: ListLoadingIndicator(),
@@ -301,34 +297,7 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
                     if (header != null) header!,
                     SliverFillRemaining(
                       hasScrollBody: false,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          buildEmptyView(context),
-                          if (manualPageLoading)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 16),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  TextButton(
-                                    onPressed: logic.current > 1
-                                        ? () => prevPage(logic)
-                                        : null,
-                                    child: Text('上一页'.tl),
-                                  ),
-                                  Text('${logic.current}/${logic.maxPage ?? "?"}'),
-                                  TextButton(
-                                    onPressed: logic.current < (logic.maxPage ?? 1)
-                                        ? () => nextPage(logic)
-                                        : null,
-                                    child: Text('下一页'.tl),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
+                      child: buildEmptyView(context),
                     ),
                   ],
                 );
@@ -611,32 +580,6 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
     if (res != "") {
       showToast(message: "输入的数字不正确".tl);
     }
-  }
-
-  Widget buildLoadMore(BuildContext context, ComicsPageLogic<T> logic) {
-    final hasMore = logic.current < (logic.maxPage ?? 1);
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text('已筛选 @current / @total 页'.tlParams({
-            'current': logic.current.toString(),
-            'total': logic.maxPage?.toString() ?? '?',
-          })),
-          const SizedBox(height: 8),
-          if (logic.loadingData)
-            const CircularProgressIndicator()
-          else if (hasMore)
-            FilledButton.tonal(
-              onPressed: () => logic.loadNextPage(getComics),
-              child: Text('继续筛选下一页'.tl),
-            )
-          else
-            Text('已筛选全部结果'.tl),
-        ],
-      ),
-    );
   }
 
   Widget buildEmptyView(BuildContext context) {
