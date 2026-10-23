@@ -9,6 +9,9 @@ class PicacgSearchFilters {
 
   static const _optionsVersion = 'native-categories-v1';
   static const _compatOptionsVersion = 'picacg-search-v2';
+  static const _batchOptionsVersion = 'picacg-search-v3';
+  static const concurrentPageOptions = [1, 3, 5, 8];
+  static const defaultConcurrentPages = 5;
 
   // Use the exact server category names already used by the category browser.
   static const availableCategories = <String>[
@@ -55,20 +58,35 @@ class PicacgSearchFilters {
   final bool compatibilityMode;
   final List<String> includedTags;
   final List<String> excludedTags;
+  final int concurrentPages;
 
   PicacgSearchFilters(
       {String sort = 'dd',
       Iterable<String> categories = const [],
       this.compatibilityMode = false,
+      int concurrentPages = defaultConcurrentPages,
       String includeTags = '',
       String excludeTags = ''})
       : sort = sortLabels.containsKey(sort) ? sort : 'dd',
+        concurrentPages = concurrentPageOptions.contains(concurrentPages)
+            ? concurrentPages
+            : defaultConcurrentPages,
         includedTags = List.unmodifiable(parseTags(includeTags)),
         excludedTags = List.unmodifiable(parseTags(excludeTags)),
         categories = List.unmodifiable(
             categories.where(availableCategories.contains).toSet());
 
   factory PicacgSearchFilters.fromOptions(List<String> options) {
+    if (options.length >= 6 && options[1] == _batchOptionsVersion) {
+      return PicacgSearchFilters(
+        sort: options.first,
+        compatibilityMode: options[2] == 'compat',
+        includeTags: options[3],
+        excludeTags: options[4],
+        concurrentPages: int.tryParse(options[5]) ?? defaultConcurrentPages,
+        categories: options.skip(6),
+      );
+    }
     if (options.length >= 5 && options[1] == _compatOptionsVersion) {
       return PicacgSearchFilters(
         sort: options.first,
@@ -99,10 +117,11 @@ class PicacgSearchFilters {
 
   List<String> toOptions() => [
         sort,
-        _compatOptionsVersion,
+        _batchOptionsVersion,
         compatibilityMode ? 'compat' : 'native',
         includedTags.join(', '),
         excludedTags.join(', '),
+        concurrentPages.toString(),
         ...categories,
       ];
 

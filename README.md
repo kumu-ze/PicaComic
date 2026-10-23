@@ -11,7 +11,7 @@ A comic app with multiple sources built with flutter.
 
 ## Picacg native search and compatibility tag filters (this fork)
 
-Choose multiple categories in the existing Picacg search options and submit them together with the keyword to the native search endpoint. Results use the original automatic scrolling pagination. An optional compatibility mode restores exact include-all/exclude-any tag filtering with automatic scrolling through sparse result pages. Native search stays the default.
+Choose multiple categories in the existing Picacg search options and submit them together with the keyword to the native search endpoint. Results use the original automatic scrolling pagination. An optional compatibility mode restores exact include-all/exclude-any tag filtering with automatic scrolling through sparse result pages. Compatibility mode can filter 1, 3, 5 (default), or 8 pages concurrently while retaining page order and retrying only failed pages. Native search stays the default.
 
 See [usage and matching details](doc/picacg-multi-tag-search.md). Arbitrary-tag AND/NOT filtering is local to compatibility mode; native category matching is decided by the server.
 

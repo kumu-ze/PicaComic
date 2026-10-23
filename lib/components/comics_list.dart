@@ -1,9 +1,13 @@
 part of 'components.dart';
 
 class ComicsPageLogic<T> extends StateController {
-  ComicsPageLogic({this.preserveEmptyPages = false});
+  ComicsPageLogic({this.preserveEmptyPages = false, int pageBatchSize = 1})
+      : pageBatchSize = pageBatchSize.clamp(1, 8);
 
   final bool preserveEmptyPages;
+  final int pageBatchSize;
+  final _pendingPages = <int, Res<List<T>>>{};
+  int? _retryBatchEnd;
   int _generation = 0;
   bool _disposed = false;
 
@@ -12,6 +16,8 @@ class ComicsPageLogic<T> extends StateController {
   void cancelRequests() {
     _disposed = true;
     _generation++;
+    _pendingPages.clear();
+    _retryBatchEnd = null;
   }
 
   Future<Res<List<T>>> _request(
@@ -90,6 +96,9 @@ class ComicsPageLogic<T> extends StateController {
 
   Future<void> loadNextPage(Future<Res<List<T>>> Function(int) getComics) async {
     if (_disposed || !hasMore || loadingData || comics == null) return;
+    if (preserveEmptyPages && pageBatchSize > 1) {
+      return _loadNextBatch(getComics);
+    }
     final generation = _generation;
     loadingData = true;
     Future.microtask(() => update());
@@ -100,28 +109,69 @@ class ComicsPageLogic<T> extends StateController {
       nextPageError = res.errorMessage ?? 'Network Error';
       showToast(message: nextPageError!);
     } else {
-      current++;
-      dividedComics![current] = res.data;
-      if (res.subData is int) {
-        maxPage = res.subData;
-      }
+      _appendPage(current + 1, res);
       if (res.data.isEmpty) {
-        _emptyPageCount++;
-        if (_emptyPageCount > 3 && maxPage == null) {
-          // 某些漫画源不会返回总页数, 而app的网络代码会根据用户设置进行屏蔽操作
-          // 空页面既可能是因为没有更多页面, 也可能是因为被屏蔽了
-          // 如果连续3次加载空页面, 则认为已经加载完毕
-          maxPage = current;
-        }
         // 等待一会儿再加载, 避免因为某些错误导致无限加载
         if (!preserveEmptyPages) {
           await Future.delayed(const Duration(seconds: 1));
           if (_disposed || generation != _generation) return;
         }
-      } else {
-        _emptyPageCount = 0;
-        comics!.addAll(res.data);
       }
+    }
+    loadingData = false;
+    update();
+  }
+
+  void _appendPage(int page, Res<List<T>> res) {
+    current = page;
+    dividedComics![page] = res.data;
+    if (res.subData is int) maxPage = res.subData;
+    if (res.data.isEmpty) {
+      _emptyPageCount++;
+      // Sources without a total cannot distinguish filtering from exhaustion.
+      if (_emptyPageCount > 3 && maxPage == null) maxPage = current;
+    } else {
+      _emptyPageCount = 0;
+      comics!.addAll(res.data);
+    }
+  }
+
+  Future<void> _loadNextBatch(
+      Future<Res<List<T>>> Function(int) getComics) async {
+    final generation = _generation;
+    final start = current + 1;
+    // Read the first page before batching, so the server's last page is known.
+    final end = math.min(_retryBatchEnd ?? current + pageBatchSize,
+        maxPage ?? start);
+    loadingData = true;
+    nextPageError = null;
+    Future.microtask(() => update());
+    final responses = await Future.wait([
+      for (var page = start; page <= end; page++)
+        _pendingPages.containsKey(page)
+            ? Future.value(_pendingPages[page]!)
+            : _request(getComics, page),
+    ]);
+    if (_disposed || generation != _generation) return;
+
+    for (var i = 0; i < responses.length; i++) {
+      if (!responses[i].error) _pendingPages[start + i] = responses[i];
+    }
+    _retryBatchEnd = null;
+    for (var page = start; page <= end && hasMore; page++) {
+      final response = responses[page - start];
+      if (response.error) {
+        // Keep successful later pages, but never advance past a failed page.
+        _retryBatchEnd = end;
+        nextPageError = response.errorMessage ?? 'Network Error';
+        showToast(message: nextPageError!);
+        break;
+      }
+      _pendingPages.remove(page);
+      _appendPage(page, response);
+    }
+    if (maxPage != null) {
+      _pendingPages.removeWhere((page, _) => page > maxPage!);
     }
     loadingData = false;
     update();
@@ -130,6 +180,8 @@ class ComicsPageLogic<T> extends StateController {
   @override
   void refresh() {
     _generation++;
+    _pendingPages.clear();
+    _retryBatchEnd = null;
     loadingData = false;
     loading = true;
     comics = null;
@@ -177,6 +229,8 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
   /// Keep searching source pages that become empty after local filtering.
   bool get autoLoadFilteredPages => false;
 
+  int get filteredPageBatchSize => 1;
+
   List<ComicTileMenuOption>? get addonMenuOptions => null;
 
   /// 刷新页面
@@ -208,7 +262,11 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
     }
 
     Widget body = StateBuilder<ComicsPageLogic<T>>(
-        init: ComicsPageLogic<T>(preserveEmptyPages: autoLoadFilteredPages),
+        init: ComicsPageLogic<T>(
+          preserveEmptyPages: autoLoadFilteredPages,
+          pageBatchSize: autoLoadFilteredPages && appdata.settings[25] == '0'
+              ? filteredPageBatchSize : 1,
+        ),
         dispose: (logic) => logic.cancelRequests(),
         tag: tag,
         builder: (logic) {

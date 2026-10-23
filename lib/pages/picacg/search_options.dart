@@ -21,6 +21,7 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
   late String sort;
   late Set<String> categories;
   bool compatibilityMode = false;
+  int concurrentPages = PicacgSearchFilters.defaultConcurrentPages;
   final includeController = TextEditingController();
   final excludeController = TextEditingController();
 
@@ -29,6 +30,7 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
     sort = initial.sort;
     categories = initial.categories.toSet();
     compatibilityMode = initial.compatibilityMode;
+    concurrentPages = initial.concurrentPages;
     includeController.text = initial.includedTags.join(', ');
     excludeController.text = initial.excludedTags.join(', ');
   }
@@ -54,6 +56,7 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
         sort: sort,
         categories: categories,
         compatibilityMode: compatibilityMode,
+        concurrentPages: concurrentPages,
         includeTags: includeController.text,
         excludeTags: excludeController.text,
       );
@@ -137,6 +140,25 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
                 child: Text('清除标签'.tl),
               ),
             ),
+            Text('每批并发筛选'.tl, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final pages in PicacgSearchFilters.concurrentPageOptions)
+                  ChoiceChip(
+                    key: ValueKey('picacg-concurrent-pages-$pages'),
+                    label:
+                        Text('@count 页'.tlParams({'count': pages.toString()})),
+                    selected: concurrentPages == pages,
+                    onSelected: (_) {
+                      concurrentPages = pages;
+                      update();
+                    },
+                  ),
+              ],
+            ),
+            Text('同时筛选多页，结果按原顺序显示；网络不稳定时可调低。'.tl),
           ],
           const SizedBox(height: 8),
           Row(

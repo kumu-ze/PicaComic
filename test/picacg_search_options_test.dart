@@ -88,6 +88,34 @@ void main() {
     expect(filters.sort, 'ld');
   });
 
+  testWidgets('batch selection survives mode toggling and external restore',
+      (tester) async {
+    var selected =
+        PicacgSearchFilters(compatibilityMode: true, includeTags: 'Robots')
+            .toOptions();
+    await tester.pumpWidget(page(selected, (value) => selected = value));
+    Finder batch(int pages) =>
+        find.byKey(ValueKey('picacg-concurrent-pages-$pages'));
+    expect(tester.widget<ChoiceChip>(batch(5)).selected, isTrue);
+    await tester.ensureVisible(batch(8));
+    await tester.tap(batch(8));
+    await tester.pump();
+    expect(PicacgSearchFilters.fromOptions(selected).concurrentPages, 8);
+    final toggle = find.byKey(const ValueKey('picacg-compatibility-mode'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(batch(8), findsNothing);
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(tester.widget<ChoiceChip>(batch(8)).selected, isTrue);
+    await tester.pumpWidget(page(
+        PicacgSearchFilters(compatibilityMode: true, concurrentPages: 3)
+            .toOptions(),
+        (_) {}));
+    expect(tester.widget<ChoiceChip>(batch(3)).selected, isTrue);
+  });
+
   testWidgets(
       'compatibility controls fit a narrow screen and restore external changes',
       (tester) async {

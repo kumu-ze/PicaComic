@@ -1,5 +1,8 @@
 {
   "zh_TW": {
+    "每批并发筛选": "每批並行篩選",
+    "@count 页": "@count 頁",
+    "同时筛选多页，结果按原顺序显示；网络不稳定时可调低。": "同時篩選多頁，結果按原順序顯示；網路不穩定時可調低。",
     "兼容模式（多标签筛选）": "相容模式（多標籤篩選）",
     "在搜索结果中筛选标签，向下滚动自动继续加载。关键词留空时，使用第一个包含标签搜索。": "在搜尋結果中篩選標籤，向下捲動自動繼續載入。關鍵詞留空時，使用第一個包含標籤搜尋。",
     "必须包含全部标签": "必須包含全部標籤",
@@ -581,6 +584,9 @@
     "请勿反馈相关问题": "請勿回饋相關問題"
   },
   "en_US": {
+    "每批并发筛选": "Pages to filter concurrently",
+    "@count 页": "@count pages",
+    "同时筛选多页，结果按原顺序显示；网络不稳定时可调低。": "Filter several pages at once, keeping the original order. Reduce this on unstable connections.",
     "兼容模式（多标签筛选）": "Compatibility mode (tag filters)",
     "在搜索结果中筛选标签，向下滚动自动继续加载。关键词留空时，使用第一个包含标签搜索。": "Filter tags within search results; scroll down to load more automatically. With no keyword, search using the first required tag.",
     "必须包含全部标签": "Require all tags",

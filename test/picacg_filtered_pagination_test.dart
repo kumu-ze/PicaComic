@@ -9,8 +9,12 @@ import 'package:pica_comic/network/res.dart';
 import 'package:pica_comic/tools/translations.dart';
 
 class FixturePage extends ComicsPage<BaseComic> {
-  const FixturePage(this.loader, {super.key, this.filtered = false});
+  const FixturePage(this.loader,
+      {super.key, this.filtered = false, this.batchSize = 1});
   final bool filtered;
+  final int batchSize;
+  @override
+  int get filteredPageBatchSize => batchSize;
   @override
   bool get autoLoadFilteredPages => filtered;
   final Future<Res<List<BaseComic>>> Function(int) loader;
@@ -51,10 +55,12 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> mountFiltered(WidgetTester tester,
-      Future<Res<List<BaseComic>>> Function(int) loader) async {
-    await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: FixturePage(loader, filtered: true))));
+  Future<void> mountFiltered(
+      WidgetTester tester, Future<Res<List<BaseComic>>> Function(int) loader,
+      {int batchSize = 1}) async {
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: FixturePage(loader, filtered: true, batchSize: batchSize))));
     await tester.pump();
     await tester.pump();
   }
@@ -65,6 +71,141 @@ void main() {
       await tester.pump();
     }
   }
+
+  test(
+      'batch requests run together but merge in page order and respect the last page',
+      () async {
+    final logic =
+        ComicsPageLogic<String>(preserveEmptyPages: true, pageBatchSize: 5);
+    await logic.get((_) async => const Res(['page 1'], subData: 7));
+    final pending = <int, Completer<Res<List<String>>>>{};
+    Future<Res<List<String>>> loader(int page) =>
+        (pending[page] = Completer<Res<List<String>>>()).future;
+    final loading = logic.loadNextPage(loader);
+    expect(pending.keys.toList(), [2, 3, 4, 5, 6]);
+    await logic.loadNextPage(loader);
+    expect(pending.length, 5);
+    for (final page in [6, 4, 2, 5, 3]) {
+      pending[page]!.complete(Res(['page $page'], subData: 7));
+    }
+    await loading;
+    expect(logic.comics,
+        ['page 1', 'page 2', 'page 3', 'page 4', 'page 5', 'page 6']);
+    expect(logic.current, 6);
+    final last = logic.loadNextPage(loader);
+    expect(pending.keys.toList(), [2, 3, 4, 5, 6, 7]);
+    pending[7]!.complete(const Res(['page 7'], subData: 7));
+    await last;
+    await logic.loadNextPage(loader);
+    expect(pending.length, 6);
+    expect(logic.hasMore, isFalse);
+  });
+
+  test('native pagination stays sequential and unknown totals are not guessed',
+      () async {
+    final native = ComicsPageLogic<String>(pageBatchSize: 8);
+    await native.get((_) async => const Res(['first'], subData: 10));
+    final requested = <int>[];
+    Future<Res<List<String>>> loader(int page) async {
+      requested.add(page);
+      return Res(['page $page'], subData: 10);
+    }
+
+    await native.loadNextPage(loader);
+    expect(requested, [2]);
+    requested.clear();
+    final filtered =
+        ComicsPageLogic<String>(preserveEmptyPages: true, pageBatchSize: 5);
+    await filtered.get((_) async => const Res([]));
+    await filtered.loadNextPage(loader);
+    expect(requested, [2]);
+    await filtered.loadNextPage(loader);
+    expect(requested, [2, 3, 4, 5, 6, 7]);
+  });
+
+  test('refresh and disposal discard outstanding batch responses', () async {
+    final logic =
+        ComicsPageLogic<String>(preserveEmptyPages: true, pageBatchSize: 3);
+    await logic.get((_) async => const Res(['old'], subData: 4));
+    final pending = <Completer<Res<List<String>>>>[];
+    final stale = logic.loadNextPage((page) {
+      final response = Completer<Res<List<String>>>();
+      pending.add(response);
+      return response.future;
+    });
+    logic.refresh();
+    await logic.get((_) async => const Res(['new'], subData: 4));
+    for (final response in pending) {
+      response.complete(const Res(['stale'], subData: 4));
+    }
+    await stale;
+    expect(logic.comics, ['new']);
+    expect(logic.current, 1);
+    pending.clear();
+    final disposed = logic.loadNextPage((page) {
+      final response = Completer<Res<List<String>>>();
+      pending.add(response);
+      return response.future;
+    });
+    logic.cancelRequests();
+    for (final response in pending) {
+      response.complete(const Res(['late'], subData: 4));
+    }
+    await disposed;
+    expect(logic.comics, ['new']);
+  });
+
+  testWidgets(
+      'batch retries only failed pages and retains later successes in order',
+      (tester) async {
+    final requested = <int>[];
+    var fail = true;
+    await mountFiltered(tester, (page) async {
+      requested.add(page);
+      if ((page == 3 || page == 5) && fail) return const Res.error('offline');
+      return Res(page == 1 ? <BaseComic>[] : comics(page), subData: 6);
+    }, batchSize: 5);
+    await tick(tester, 4);
+    final logic = StateController.find<ComicsPageLogic<BaseComic>>(
+        tag: 'native-pagination-test');
+    expect(requested, [1, 2, 3, 4, 5, 6]);
+    expect(logic.current, 2);
+    expect(logic.comics!.length, 20);
+    fail = false;
+    await tester.tap(find.byType(CustomScrollView));
+    await tester.pump();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -4000));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('重试'));
+    await tester.tap(find.text('重试'));
+    await tick(tester, 4);
+    expect(requested, [1, 2, 3, 4, 5, 6, 3, 5]);
+    expect(logic.current, 6);
+    expect(logic.comics!.map((item) => item.title).toList(), [
+      for (var page = 2; page <= 6; page++)
+        ...comics(page).map((item) => item.title)
+    ]);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      'batched empty pages continue until filled then wait for scrolling',
+      (tester) async {
+    final requested = <int>[];
+    await mountFiltered(tester, (page) async {
+      requested.add(page);
+      return Res(page < 5 ? <BaseComic>[] : comics(page), subData: 8);
+    }, batchSize: 3);
+    await tick(tester, 7);
+    expect(requested, [1, 2, 3, 4, 5, 6, 7]);
+    await tester.tap(find.byType(CustomScrollView));
+    await tester.pump();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -16000));
+    await tick(tester, 4);
+    expect(requested, [1, 2, 3, 4, 5, 6, 7, 8]);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets(
       'compatibility skips empty pages, fills viewport then waits for scrolling',
@@ -136,7 +277,7 @@ void main() {
     await mountFiltered(tester, (page) async {
       requested.add(page);
       return const Res<List<BaseComic>>([], subData: 100);
-    });
+    }, batchSize: 5);
     final navigator = tester.state<NavigatorState>(find.byType(Navigator));
     unawaited(navigator.push(MaterialPageRoute<void>(
         builder: (_) => const Scaffold(body: Text('Details')))));
@@ -168,7 +309,7 @@ void main() {
     await mountFiltered(tester, (page) async {
       requested.add(page);
       return Res(page == 1 ? <BaseComic>[] : comics(page), subData: 2);
-    });
+    }, batchSize: 8);
     await tester.tap(find.text('下一页'));
     await tester.pumpAndSettle();
     expect(requested, [1, 2]);

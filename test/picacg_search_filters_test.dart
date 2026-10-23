@@ -3,6 +3,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pica_comic/network/picacg_network/search_filters.dart';
 
 void main() {
+  test(
+      'batch setting round trips and v2 options upgrade without losing filters',
+      () {
+    final old = PicacgSearchFilters.fromOptions([
+      'ld',
+      'picacg-search-v2',
+      'compat',
+      'Robots, Space Opera',
+      'Draft',
+      '全彩',
+    ]);
+    expect(old.concurrentPages, 5);
+    expect(old.compatibilityMode, isTrue);
+    expect(old.categories, ['全彩']);
+    expect(old.includedTags, ['Robots', 'Space Opera']);
+    expect(old.excludedTags, ['Draft']);
+    final options = PicacgSearchFilters(
+      compatibilityMode: true,
+      concurrentPages: 8,
+      includeTags: 'Robots',
+      categories: ['短篇'],
+    );
+    final restored = PicacgSearchFilters.fromOptions(options.toOptions());
+    expect(restored.concurrentPages, 8);
+    expect(restored.categories, ['短篇']);
+    expect(restored.toRequest('title'), {
+      'keyword': 'title',
+      'sort': 'dd',
+      'categories': ['短篇']
+    });
+    for (final invalid in ['0', '-3', '1000', 'invalid']) {
+      final values = options.toOptions()..[5] = invalid;
+      expect(PicacgSearchFilters.fromOptions(values).concurrentPages, 5);
+    }
+  });
+
   test('compatibility mode matches every include and rejects any exclude', () {
     final filters = PicacgSearchFilters(
       compatibilityMode: true,

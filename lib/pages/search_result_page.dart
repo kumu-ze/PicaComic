@@ -35,6 +35,10 @@ class _SearchPageComicList extends ComicsPage<BaseComic> {
       PicacgSearchFilters.fromOptions(options).hasLocalFilters;
 
   @override
+  int get filteredPageBatchSize => autoLoadFilteredPages
+      ? PicacgSearchFilters.fromOptions(options).concurrentPages : 1;
+
+  @override
   final Widget header;
 
   @override
