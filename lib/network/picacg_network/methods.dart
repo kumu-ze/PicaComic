@@ -279,6 +279,9 @@ class PicacgNetwork {
   Future<Res<List<ComicItemBrief>>> search(
       String keyWord, String sort, int page,
       {bool addToHistory = false, PicacgSearchFilters? filters}) async {
+    if (filters?.hasConflict ?? false) {
+      return const Res([], subData: 1);
+    }
     var response = await post('$apiUrl/comics/advanced-search?page=$page',
         filters?.toRequest(keyWord) ?? {"keyword": keyWord, "sort": sort});
     if (page == 1 && addToHistory && keyWord != "") {
@@ -300,6 +303,7 @@ class PicacgNetwork {
               res["data"]["comics"]["docs"][i]["tags"] ?? []));
           tags.addAll(List<String>.from(
               res["data"]["comics"]["docs"][i]["categories"] ?? []));
+          if (filters != null && !filters.matches(tags)) continue;
           var si = ComicItemBrief(
               res["data"]["comics"]["docs"][i]["title"] ?? "Unknown",
               res["data"]["comics"]["docs"][i]["author"] ?? "Unknown",

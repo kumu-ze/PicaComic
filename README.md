@@ -9,11 +9,11 @@ A comic app with multiple sources built with flutter.
 
 **Forked from [nyne](https://github.com/wgh136), provide extended support & fix, no guaranteed roadmap.**
 
-## Picacg native category search (this fork)
+## Picacg native search and compatibility tag filters (this fork)
 
-Choose multiple categories in the existing Picacg search options and submit them together with the keyword to the native search endpoint. Results use the original automatic scrolling pagination. The previous client-side include/exclude filtering has been removed.
+Choose multiple categories in the existing Picacg search options and submit them together with the keyword to the native search endpoint. Results use the original automatic scrolling pagination. An optional compatibility mode restores exact include-all/exclude-any tag filtering with automatic scrolling through sparse result pages. Native search stays the default.
 
-See [usage and matching details](doc/picacg-multi-tag-search.md). This does not claim arbitrary-tag AND/NOT search support.
+See [usage and matching details](doc/picacg-multi-tag-search.md). Arbitrary-tag AND/NOT filtering is local to compatibility mode; native category matching is decided by the server.
 
 ## Download
 

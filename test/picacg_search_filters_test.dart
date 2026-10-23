@@ -3,6 +3,72 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pica_comic/network/picacg_network/search_filters.dart';
 
 void main() {
+  test('compatibility mode matches every include and rejects any exclude', () {
+    final filters = PicacgSearchFilters(
+      compatibilityMode: true,
+      includeTags: ' Space Opera，Robots; space opera\nRobots ',
+      excludeTags: 'Unfinished、Draft',
+    );
+    expect(filters.includedTags, ['Space Opera', 'Robots']);
+    expect(filters.excludedTags, ['Unfinished', 'Draft']);
+    expect(filters.matches([' space opera ', 'ROBOTS', 'full color']), isTrue);
+    expect(filters.matches(['Space Opera', 'Tiny Robots']), isFalse);
+    expect(filters.matches(['Robots']), isFalse);
+    expect(filters.matches(['Space Opera', 'Robots', 'draft']), isFalse);
+    expect(filters.matches([]), isFalse);
+    expect(filters.toRequest('')['keyword'], 'Space Opera');
+    expect(filters.toRequest('my title')['keyword'], 'my title');
+  });
+
+  test(
+      'disabled compatibility retains tag choices without changing native search',
+      () {
+    final filters = PicacgSearchFilters(
+      categories: ['全彩'],
+      includeTags: 'Robots',
+      excludeTags: 'Robots',
+    );
+    final restored = PicacgSearchFilters.fromOptions(filters.toOptions());
+    expect(restored.compatibilityMode, isFalse);
+    expect(restored.hasLocalFilters, isFalse);
+    expect(restored.hasConflict, isFalse);
+    expect(restored.includedTags, ['Robots']);
+    expect(restored.excludedTags, ['Robots']);
+    expect(restored.matches([]), isTrue);
+    expect(restored.toRequest(''), {
+      'keyword': '',
+      'sort': 'dd',
+      'categories': ['全彩']
+    });
+  });
+
+  test('compatibility options round trip and detect conflicting tags', () {
+    final filters = PicacgSearchFilters(
+      sort: 'vd',
+      categories: ['短篇'],
+      compatibilityMode: true,
+      includeTags: 'Robots, Space Opera',
+      excludeTags: 'robots',
+    );
+    final restored = PicacgSearchFilters.fromOptions(filters.toOptions());
+    expect(restored.hasConflict, isTrue);
+    expect(restored.hasLocalFilters, isTrue);
+    expect(restored.toOptions(), filters.toOptions());
+    expect(restored.matches(['Robots', 'Space Opera']), isFalse);
+  });
+
+  test('exclude-only compatibility and native v1 options remain usable', () {
+    final filters =
+        PicacgSearchFilters(compatibilityMode: true, excludeTags: 'Draft');
+    expect(filters.matches([]), isTrue);
+    expect(filters.matches(['Draft']), isFalse);
+    expect(filters.toRequest('')['keyword'], '');
+    final old = PicacgSearchFilters.fromOptions(
+        ['ld', 'native-categories-v1', '全彩', '短篇']);
+    expect(old.categories, ['全彩', '短篇']);
+    expect(old.compatibilityMode, isFalse);
+  });
+
   test('all selected categories are sent with the original keyword', () {
     final options = PicacgSearchFilters(sort: 'ld', categories: ['全彩', '單行本']);
     expect(jsonDecode(jsonEncode(options.toRequest('Science Fiction'))), {

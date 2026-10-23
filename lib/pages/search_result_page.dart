@@ -9,6 +9,7 @@ import 'package:pica_comic/foundation/app.dart';
 import 'package:pica_comic/foundation/pair.dart';
 import 'package:pica_comic/network/base_comic.dart';
 import 'package:pica_comic/network/res.dart';
+import 'package:pica_comic/network/picacg_network/search_filters.dart';
 import 'package:pica_comic/tools/extensions.dart';
 import 'package:pica_comic/tools/tags_translation.dart';
 import 'package:pica_comic/tools/translations.dart';
@@ -28,6 +29,10 @@ class _SearchPageComicList extends ComicsPage<BaseComic> {
 
   @override
   final String sourceKey;
+
+  @override
+  bool get autoLoadFilteredPages => sourceKey == 'picacg' &&
+      PicacgSearchFilters.fromOptions(options).hasLocalFilters;
 
   @override
   final Widget header;

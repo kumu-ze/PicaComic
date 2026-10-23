@@ -1,6 +1,28 @@
 part of 'components.dart';
 
 class ComicsPageLogic<T> extends StateController {
+  ComicsPageLogic({this.preserveEmptyPages = false});
+
+  final bool preserveEmptyPages;
+  int _generation = 0;
+  bool _disposed = false;
+
+  bool get hasMore => maxPage == null || current < maxPage!;
+
+  void cancelRequests() {
+    _disposed = true;
+    _generation++;
+  }
+
+  Future<Res<List<T>>> _request(
+      Future<Res<List<T>>> Function(int) loader, int page) async {
+    try {
+      return await loader(page);
+    } catch (error) {
+      return Res.error(error.toString());
+    }
+  }
+
   bool loading = true;
 
   ///用于正常模式下的漫画数据储存
@@ -24,11 +46,13 @@ class ComicsPageLogic<T> extends StateController {
   bool showFloatingButton = true;
 
   Future<void> get(Future<Res<List<T>>> Function(int) getComics) async {
-    if (loadingData) return;
+    if (_disposed || loadingData) return;
+    final generation = _generation;
     loadingData = true;
     Future.microtask(() => update());
     if (comics == null) {
-      var res = await getComics(1);
+      var res = await _request(getComics, 1);
+      if (_disposed || generation != _generation) return;
       if (res.error) {
         message = res.errorMessage;
       } else {
@@ -38,7 +62,7 @@ class ComicsPageLogic<T> extends StateController {
         if (res.subData is int) {
           maxPage = res.subData;
         }
-        if (res.data.isEmpty) {
+        if (res.data.isEmpty && !preserveEmptyPages) {
           maxPage = 1;
         }
       }
@@ -46,11 +70,13 @@ class ComicsPageLogic<T> extends StateController {
       loadingData = false;
       update();
     } else {
-      var res = await getComics(current);
+      final page = current;
+      var res = await _request(getComics, page);
+      if (_disposed || generation != _generation) return;
       if (res.error) {
         message = res.errorMessage;
       } else {
-        dividedComics![current] = res.data;
+        dividedComics![page] = res.data;
       }
       loading = false;
       loadingData = false;
@@ -63,12 +89,13 @@ class ComicsPageLogic<T> extends StateController {
   String? nextPageError;
 
   Future<void> loadNextPage(Future<Res<List<T>>> Function(int) getComics) async {
-    if (maxPage != null && current >= maxPage!) return;
-    if (loadingData) return;
+    if (_disposed || !hasMore || loadingData || comics == null) return;
+    final generation = _generation;
     loadingData = true;
     Future.microtask(() => update());
     nextPageError = null;
-    var res = await getComics(current + 1);
+    var res = await _request(getComics, current + 1);
+    if (_disposed || generation != _generation) return;
     if (res.error) {
       nextPageError = res.errorMessage ?? 'Network Error';
       showToast(message: nextPageError!);
@@ -87,7 +114,10 @@ class ComicsPageLogic<T> extends StateController {
           maxPage = current;
         }
         // 等待一会儿再加载, 避免因为某些错误导致无限加载
-        await Future.delayed(const Duration(seconds: 1));
+        if (!preserveEmptyPages) {
+          await Future.delayed(const Duration(seconds: 1));
+          if (_disposed || generation != _generation) return;
+        }
       } else {
         _emptyPageCount = 0;
         comics!.addAll(res.data);
@@ -99,6 +129,8 @@ class ComicsPageLogic<T> extends StateController {
 
   @override
   void refresh() {
+    _generation++;
+    loadingData = false;
     loading = true;
     comics = null;
     dividedComics = null;
@@ -142,6 +174,9 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
 
   bool get showPageIndicator => true;
 
+  /// Keep searching source pages that become empty after local filtering.
+  bool get autoLoadFilteredPages => false;
+
   List<ComicTileMenuOption>? get addonMenuOptions => null;
 
   /// 刷新页面
@@ -173,7 +208,8 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
     }
 
     Widget body = StateBuilder<ComicsPageLogic<T>>(
-        init: ComicsPageLogic<T>(),
+        init: ComicsPageLogic<T>(preserveEmptyPages: autoLoadFilteredPages),
+        dispose: (logic) => logic.cancelRequests(),
         tag: tag,
         builder: (logic) {
           if (logic.dividedComics?[logic.current] == null &&
@@ -217,6 +253,56 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
                 }
               } else {
                 comics = logic.comics!;
+              }
+              if (autoLoadFilteredPages) {
+                return _FilteredComicsScrollView(
+                  logic: logic,
+                  loadNextPage: () => logic.loadNextPage(getComics),
+                  slivers: [
+                    if (title != null)
+                      SliverAppbar(
+                        title: Text(title!),
+                        actions: tailing != null ? [tailing!] : null,
+                      ),
+                    if (header != null) header!,
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text('兼容筛选：已检查 @pages 页，找到 @count 部作品'.tlParams({
+                          'pages': logic.current.toString(),
+                          'count': comics.length.toString(),
+                        })),
+                      ),
+                    ),
+                    if (comics.isNotEmpty)
+                      SliverGrid(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => buildItem(context, comics[i]),
+                          childCount: comics.length,
+                        ),
+                        gridDelegate: SliverGridDelegateWithComics(),
+                      )
+                    else if (!logic.hasMore)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: buildEmptyView(context),
+                      ),
+                    if (logic.nextPageError != null)
+                      SliverToBoxAdapter(
+                        child: Center(
+                          child: TextButton.icon(
+                            onPressed: () => logic.loadNextPage(getComics),
+                            icon: const Icon(Icons.refresh),
+                            label: Text('重试'.tl),
+                          ),
+                        ),
+                      )
+                    else if (logic.hasMore)
+                      const SliverToBoxAdapter(child: ListLoadingIndicator())
+                    else
+                      const SliverToBoxAdapter(child: SizedBox(height: 80)),
+                  ],
+                );
               }
               if (comics.isEmpty) {
                 return SmoothCustomScrollView(
@@ -295,6 +381,8 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
                         actions: tailing != null ? [tailing!] : null,
                       ),
                     if (header != null) header!,
+                    if (autoLoadFilteredPages && showPageIndicator && logic.maxPage != 1)
+                      buildPageSelector(context, logic),
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: buildEmptyView(context),
@@ -599,6 +687,94 @@ abstract class ComicsPage<T extends BaseComic> extends StatelessWidget {
 
   Widget buildItem(BuildContext context, T item) {
     return buildComicTile(context, item, sourceKey, addonMenuOptions: addonMenuOptions);
+  }
+}
+
+/// Request another filtered source page only when the viewport needs more.
+/// Empty pages do not end the search, and hidden routes never keep scanning.
+class _FilteredComicsScrollView extends StatefulWidget {
+  const _FilteredComicsScrollView({
+    required this.logic,
+    required this.loadNextPage,
+    required this.slivers,
+  });
+
+  final ComicsPageLogic logic;
+  final Future<void> Function() loadNextPage;
+  final List<Widget> slivers;
+
+  @override
+  State<_FilteredComicsScrollView> createState() => _FilteredComicsScrollViewState();
+}
+
+class _FilteredComicsScrollViewState extends State<_FilteredComicsScrollView>
+    with WidgetsBindingObserver {
+  final _scrollController = ScrollController();
+  Timer? _timer;
+  bool _postFramePending = false;
+  bool _visible = true;
+  bool _resumed = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final state = WidgetsBinding.instance.lifecycleState;
+    _resumed = state == null || state == AppLifecycleState.resumed;
+    _scrollController.addListener(_scheduleCheck);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    if (_resumed) {
+      _scheduleCheck();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
+  bool get _needsMore => mounted && _visible && _resumed &&
+      !widget.logic.loadingData && widget.logic.nextPageError == null &&
+      widget.logic.hasMore && _scrollController.hasClients &&
+      _scrollController.position.extentAfter < 400;
+
+  void _scheduleCheck() {
+    if (_postFramePending || !mounted) return;
+    _postFramePending = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _postFramePending = false;
+      if (!_needsMore) {
+        _timer?.cancel();
+        _timer = null;
+        return;
+      }
+      // Bound the request rate when many consecutive pages have no matches.
+      _timer ??= Timer(const Duration(milliseconds: 200), () {
+        _timer = null;
+        if (_needsMore) unawaited(widget.loadNextPage());
+      });
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _visible = TickerMode.of(context) && (ModalRoute.isCurrentOf(context) ?? true);
+    _scheduleCheck();
+    return SmoothCustomScrollView(
+      controller: _scrollController,
+      slivers: widget.slivers,
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
+    super.dispose();
   }
 }
 

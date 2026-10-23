@@ -48,6 +48,81 @@ void main() {
     expect(selected, options('ld', []));
   });
 
+  testWidgets('compatibility toggle retains tags and native categories',
+      (tester) async {
+    var selected = options('ld', ['全彩']);
+    await tester.pumpWidget(page(selected, (value) => selected = value));
+    final toggle = find.byKey(const ValueKey('picacg-compatibility-mode'));
+    final include = find.byKey(const ValueKey('picacg-include-tags'));
+    final exclude = find.byKey(const ValueKey('picacg-exclude-tags'));
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.enterText(include, 'Space Opera, Robots');
+    await tester.enterText(exclude, 'Draft');
+    await tester.pump();
+    var filters = PicacgSearchFilters.fromOptions(selected);
+    expect(filters.compatibilityMode, isTrue);
+    expect(filters.includedTags, ['Space Opera', 'Robots']);
+    expect(filters.excludedTags, ['Draft']);
+    expect(filters.categories, ['全彩']);
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    filters = PicacgSearchFilters.fromOptions(selected);
+    expect(filters.hasLocalFilters, isFalse);
+    expect(filters.includedTags, ['Space Opera', 'Robots']);
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(include).controller!.text,
+        'Space Opera, Robots');
+    await tester.enterText(exclude, 'robots');
+    await tester.pump();
+    expect(find.text('同一标签不能同时包含和排除'), findsOneWidget);
+    await tester.ensureVisible(find.text('清除标签'));
+    await tester.tap(find.text('清除标签'));
+    await tester.pump();
+    filters = PicacgSearchFilters.fromOptions(selected);
+    expect(filters.hasLocalFilters, isFalse);
+    expect(filters.categories, ['全彩']);
+    expect(filters.sort, 'ld');
+  });
+
+  testWidgets(
+      'compatibility controls fit a narrow screen and restore external changes',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(page(
+        PicacgSearchFilters(
+          compatibilityMode: true,
+          includeTags: 'Robots',
+          excludeTags: 'Draft',
+        ).toOptions(),
+        (_) {}));
+    await tester.pumpAndSettle();
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('picacg-exclude-tags')));
+    await tester
+        .ensureVisible(category(PicacgSearchFilters.availableCategories.last));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(page(['dd'], (_) {}));
+    expect(find.byType(TextField), findsNothing);
+    await tester
+        .ensureVisible(find.byKey(const ValueKey('picacg-compatibility-mode')));
+    await tester.tap(find.byKey(const ValueKey('picacg-compatibility-mode')));
+    await tester.pump();
+    expect(
+        tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('picacg-include-tags')))
+            .controller!
+            .text,
+        '');
+  });
+
   testWidgets(
       'restored and externally reset categories are displayed correctly',
       (tester) async {
@@ -76,6 +151,7 @@ void main() {
     final previousSources = ComicSource.sources;
     addTearDown(() => ComicSource.sources = previousSources);
     final requests = <Map<String, dynamic>>[];
+    final optionRequests = <PicacgSearchFilters>[];
     ComicSource.sources = [
       ComicSource.named(
         name: 'picacg',
@@ -89,6 +165,7 @@ void main() {
           customOptionsBuilder: (context, initial, changed) =>
               PicacgSearchOptions(initialValues: initial, onChanged: changed),
           loadPage: (keyword, page, values) async {
+            optionRequests.add(PicacgSearchFilters.fromOptions(values));
             requests.add(
                 PicacgSearchFilters.fromOptions(values).toRequest(keyword));
             return const Res<List<BaseComic>>([], subData: 1);
@@ -129,6 +206,29 @@ void main() {
       'categories': ['全彩', '短篇']
     });
     expect(requests.length, 2);
+    final toggle = find.byKey(const ValueKey('picacg-compatibility-mode'));
+    final include = find.byKey(const ValueKey('picacg-include-tags'));
+    await tester.tap(find.byIcon(Icons.tune));
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.enterText(include, 'Robots, Space Opera');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(requests.length, 2);
+    await tester.tap(find.byIcon(Icons.tune));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.enterText(include, 'Robots, Space Opera');
+    await tester.tap(find.text('确认'));
+    await tester.pumpAndSettle();
+    expect(requests.length, 3);
+    expect(requests.last['keyword'], 'fixture title');
+    expect(optionRequests.last.compatibilityMode, isTrue);
+    expect(optionRequests.last.includedTags, ['Robots', 'Space Opera']);
+    expect(optionRequests.last.categories, ['全彩', '短篇']);
     expect(find.text('继续筛选下一页'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

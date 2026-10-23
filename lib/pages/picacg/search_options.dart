@@ -20,11 +20,17 @@ class PicacgSearchOptions extends StatefulWidget {
 class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
   late String sort;
   late Set<String> categories;
+  bool compatibilityMode = false;
+  final includeController = TextEditingController();
+  final excludeController = TextEditingController();
 
   void restore() {
     final initial = PicacgSearchFilters.fromOptions(widget.initialValues);
     sort = initial.sort;
     categories = initial.categories.toSet();
+    compatibilityMode = initial.compatibilityMode;
+    includeController.text = initial.includedTags.join(', ');
+    excludeController.text = initial.excludedTags.join(', ');
   }
 
   @override
@@ -41,8 +47,22 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
 
   void update() {
     setState(() {});
-    widget.onChanged(
-        PicacgSearchFilters(sort: sort, categories: categories).toOptions());
+    widget.onChanged(filters.toOptions());
+  }
+
+  PicacgSearchFilters get filters => PicacgSearchFilters(
+        sort: sort,
+        categories: categories,
+        compatibilityMode: compatibilityMode,
+        includeTags: includeController.text,
+        excludeTags: excludeController.text,
+      );
+
+  @override
+  void dispose() {
+    includeController.dispose();
+    excludeController.dispose();
+    super.dispose();
   }
 
   @override
@@ -70,6 +90,55 @@ class _PicacgSearchOptionsState extends State<PicacgSearchOptions> {
             ],
           ),
           const SizedBox(height: 16),
+          SwitchListTile.adaptive(
+            key: const ValueKey('picacg-compatibility-mode'),
+            contentPadding: EdgeInsets.zero,
+            title: Text('兼容模式（多标签筛选）'.tl),
+            value: compatibilityMode,
+            onChanged: (enabled) {
+              compatibilityMode = enabled;
+              update();
+            },
+          ),
+          if (compatibilityMode) ...[
+            Text('在搜索结果中筛选标签，向下滚动自动继续加载。关键词留空时，使用第一个包含标签搜索。'.tl),
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('picacg-include-tags'),
+              controller: includeController,
+              decoration: InputDecoration(
+                labelText: '必须包含全部标签'.tl,
+                helperText: '多个标签用逗号分隔，标签内可含空格'.tl,
+                helperMaxLines: 2,
+                border: const OutlineInputBorder(),
+              ),
+              onChanged: (_) => update(),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              key: const ValueKey('picacg-exclude-tags'),
+              controller: excludeController,
+              decoration: InputDecoration(
+                labelText: '排除任一标签'.tl,
+                border: const OutlineInputBorder(),
+                errorText: filters.hasConflict ? '同一标签不能同时包含和排除'.tl : null,
+                errorMaxLines: 2,
+              ),
+              onChanged: (_) => update(),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () {
+                  includeController.clear();
+                  excludeController.clear();
+                  update();
+                },
+                child: Text('清除标签'.tl),
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
